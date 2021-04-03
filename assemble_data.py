@@ -6,6 +6,8 @@ Copyright, Daniel Hocevar and Roman Zupancic
 import requests
 import json
 import pandas as pd
+import time
+from typing import Optional
 
 HEADERS = [
     'name',
@@ -23,7 +25,7 @@ HEADERS = [
     'maintenance'
 ]
 
-def get_package(package_name: str) -> dict:
+def get_package(package_name: str) -> Optional[dict]:
     """Query npms.io for package data corresponding to package_name.
     """
 
@@ -39,7 +41,10 @@ def get_package(package_name: str) -> dict:
     else:
         # raise KeyError('Package Name is invalid, or the webpage is unavailable')
         print('Error getting package!')
-        return HEADERS
+        print(f'Package name: {package_name}')
+        print(f'Request url: {r.url}')
+        print(f'Request text: {r.text}')
+        return None
 
 
 def _trim_package_data(data: dict) -> None:
@@ -96,7 +101,6 @@ def write_sample_package_names() -> set[str]:
     packages = set()
     chars = 'abcdefghijklmnopqrstuvwxyz'
     for char in chars:
-        print(char)
         for i in range(10):
             start = 250 * i
             r = requests.get("https://api.npms.io/v2/search?from=" + str(start) + "&" + "size=250&q=" + char + "+boost-exact:false")
@@ -119,7 +123,6 @@ def write_popular_package_names() -> set[str]:
     packages = set()
     chars = 'abcdefghijklmnopqrstuvwxyz'
     for char in chars:
-        print(char)
         for i in range(10):
             start = 250 * i
             r = requests.get("https://api.npms.io/v2/search?from=" + str(start) + "&" + "size=250&q=" + char + "+boost-exact:false")
@@ -150,39 +153,54 @@ def get_detailed_data() -> list[list]:
     # Define a dataframe to hold all of the package data
     #df = pd.DataFrame(columns=HEADERS)
     packages_so_far = []
-    with open('small_list.txt', 'r') as file:
-        data = file.read()
-        i = 0 # A variable to keep help us keep track of progress
+    seen = set()
+    with open('popular.txt', 'r') as file:
+        data = file.readlines()
+        i = 1 # A variable to keep help us keep track of progress
         for line in data:           
-            packages_so_far.extend(all_package_dependencies(line))
-            print(i)
+            print(f'Line ({i}) for package: {line.replace('\n', '')}')
+            packages_so_far.extend(all_package_dependencies(line, seen))
+            print(f'Length of list is now: {len(packages_so_far)}')
             i += 1
 
-    df = pd.DataFrame(packages_so_far, columns=HEADERS)
-    
-    print(df)
+            if i % 10 == 0:
+                df = pd.DataFrame(packages_so_far, columns=HEADERS)
+                print('Writing DataFrame')
+                df.to_csv(f'./intermediate/big{i}.csv')
+            time.sleep(1)
+            
 
-    print('Writing DataFrame')
-    df.to_csv('./test.csv')
+    df = pd.DataFrame(packages_so_far, columns=HEADERS)
+
+    print('Writing Final DataFrame')
+    df.to_csv('./big.csv')
         
 
-def all_package_dependencies(package: str) -> list[list]:
+def all_package_dependencies(package: str, seen: set) -> list[list]:
     """
     Get info for the current package, as well as info for all of the package's upstream dependencies
     """
     all_packages = [] # accumulator list
     # Get data for the current package
+
     data = get_package(package)
-    data_list = _convert_package_json_to_list(data)
-    all_packages.append(data_list)
-    # Recursively get data for all of the package's upstream dependencies
-    if data_list[4] is not None:
-        print(package)
-        for package in data_list[4]:            
-            c = all_package_dependencies(package)
-            all_packages.extend(c)
-    
-    return all_packages
+
+    if data is None:
+        return []
+    else:
+        data_list = _convert_package_json_to_list(data)
+
+        all_packages.append(data_list)
+
+        seen.add(package)
+        # Recursively get data for all of the package's upstream dependencies
+        if data_list[4] is not None:
+            for dependency in data_list[4]:            
+                if dependency not in seen:
+                    c = all_package_dependencies(dependency, seen)
+                    all_packages.extend(c)
+        
+        return all_packages
 
 
 if __name__ == '__main__':

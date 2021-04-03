@@ -6,3 +6,5 @@ jrz-errors
 ngx-security
 error-x
 graphql
+react
+firebase
