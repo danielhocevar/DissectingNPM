@@ -134,7 +134,7 @@ def write_popular_package_names() -> set[str]:
                 packages.add((score, package['package']['name']))
 
     package_list = list(packages)
-    packages_sorted = sorted(package_list)
+    # packages_sorted = sorted(package_list)
 
     package_list = package_list[len(package_list) - 501:]
 
@@ -157,8 +157,9 @@ def get_detailed_data() -> list[list]:
     with open('popular.txt', 'r') as file:
         data = file.readlines()
         i = 1 # A variable to keep help us keep track of progress
-        for line in data:           
-            print(f'Line ({i}) for package: {line.replace('\n', '')}')
+        for line in data:
+            no_newline = line.replace('\n', '')
+            print(f'Line ({i}) for package: {no_newline}')
             packages_so_far.extend(all_package_dependencies(line, seen))
             print(f'Length of list is now: {len(packages_so_far)}')
             i += 1
@@ -193,7 +194,7 @@ def all_package_dependencies(package: str, seen: set) -> list[list]:
         all_packages.append(data_list)
 
         seen.add(package)
-        # Recursively get data for all of the package's upstream dependencies
+        # Recursively get data for each of the package's upstream dependencies
         if data_list[4] is not None:
             for dependency in data_list[4]:            
                 if dependency not in seen:

@@ -177,7 +177,7 @@ didyoumean2
 @arist0tl3/template-about-cards
 dungeon-track
 inequality-solver
-mkdir-p
+mkdi
 @shiguang/playback
 most-chunksof
 node-red-contrib-http-instance
