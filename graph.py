@@ -7,7 +7,12 @@ from __future__ import annotations
 import csv
 import pandas as pd
 import ast
-from typing import Any
+from typing import Any, Callable
+import graphviz as gviz
+import networkx as nx
+import plotly.graph_objects as plot
+import scipy
+import pydot
 
 
 class _PackageVertex:
@@ -94,12 +99,29 @@ class _PackageVertex:
         
         Apply the graph traversal pattern taught in class
         """
-        new_visited = visited.union({self})
+        visited.add(self)
         total = 0
         for vertex in self.upstream_dependencies:
             if vertex not in visited:
-                total = total + 1 + vertex.get_num_dependencies(new_visited)
+                total = total + 1 + vertex.get_num_dependencies(visited)
         return total
+    
+    def get_package_dependencies(self, visited: set) -> list[tuple[str, str]]:
+        """
+        Return a list of tuples with one tupple for every edge that this node is connected to,
+        as well as a tupple for every upstream dependency edge.
+
+        The first string in the tupple is the dependent and the second string is the dependency
+
+        Apply the graph traversal pattern taught in class
+        """
+        new_visited = visited.union({self})
+        relationships_so_far = []
+        for vertex in self.upstream_dependencies:
+            if vertex not in visited:
+                relationships_so_far.append((self.name, vertex.name))
+                relationships_so_far.extend(vertex.get_package_dependencies(new_visited))
+        return relationships_so_far
 
 
 class PackageGraph:
@@ -187,15 +209,18 @@ class PackageGraph:
             raise KeyError(f'The vertices {package1} or {package2}'\
                            'do not exist in this graph')
     
-    def get_num_dependencies(self, package) -> int:
+    def get_num_dependencies(self, package: str) -> int:
         """
         Return the number of dependencies of the given package.
 
         Include dependencies of dependencies in the count, by using the
         common graph traversal pattern to traverse all relavent nodes in the graph
         """
-        vertex = self._vertices[package]
-        return vertex.get_num_dependencies(set())
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            return vertex.get_num_dependencies(set())
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
     def popular_package_data(self) -> tuple[list[str], list[int]]:
         """Return dependency data on some hard-coded popular packages."""
@@ -213,6 +238,106 @@ class PackageGraph:
         for package in popular_packages:
             num_dependencies.append(self.get_num_dependencies(package))
         return (popular_packages, num_dependencies)
+        
+    def get_package_dependencies(self, package: str) -> list[tuple[str, str]]:
+        """ 
+        Return a list containing tuples containing two package names
+
+        Each tuple in the list represents an edge between the two packages contained by the tuple
+        """
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            return vertex.get_package_dependencies(set())        
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+
+    def get_package_digraph(self, package: str) -> gviz.Digraph:
+        """
+        Return a graphviz digraph object used to visualize package dependencies
+        """
+        if package in self._vertices:
+            digraph = gviz.Digraph()
+            for edge in self.get_package_dependencies(package):
+                digraph.edge(edge[0], edge[1])
+
+            return digraph
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+
+    def get_package_graph_networkx(self, package: str) -> nx.Graph:
+        """
+        Convert this graph to a networkx.
+        """
+        if package in self._vertices:
+            netxG = nx.Graph()
+            for edge in self.get_package_dependencies(package):
+                netxG.add_edge(*edge)  # The * converts the tuple to two parameters
+            return netxG
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+
+    def get_package_plotly(self, package: str, layout_algo: str):
+        """
+        Return a plotly graph object used to visualize package dependencies.
+        
+        Inspired by https://plotly.com/python/network-graphs/.
+        """
+        graph = self.get_package_graph_networkx(package)
+
+        vertex_pos = pydot.graphviz_layout(graph)
+        #vertex_pos = getattr(nx, layout_algo)(graph)
+        print('VERTEX POS')
+        print(vertex_pos)
+        edge_pos_x = []
+        edge_pos_y = []
+        for edge in graph.edges(): 
+            node_a_x, node_a_y = vertex_pos[edge[0]]
+            node_b_x, node_b_y = vertex_pos[edge[1]]
+            edge_pos_x.append(node_a_x)
+            edge_pos_x.append(node_b_x)
+            edge_pos_x.append(None)
+            edge_pos_y.append(node_a_y)
+            edge_pos_y.append(node_b_y)
+            edge_pos_y.append(None)       
+
+
+        node_pos_x = []
+        node_pos_y = []
+        for node in graph.nodes():
+            node_pos = vertex_pos[node]
+            node_pos_x.append(node_pos[0])
+            node_pos_y.append(node_pos[1])
+            
+        node_scatter = plot.Scatter(
+            marker=dict(size=12),            
+            x=node_pos_x,
+            y=node_pos_y,
+            mode='markers+text',
+            name='Packages',
+            text=list(vertex_pos.keys()),
+            textposition='top center'
+        )
+
+        edge_scatter = plot.Scatter(
+            x=edge_pos_x, y=edge_pos_y,
+            mode='lines',
+            name='Edges',
+        )
+
+        origin_pos_x, origin_pos_y = vertex_pos[package]
+        origin_node = plot.Scatter(
+            marker=dict(size=12),            
+            x=[origin_pos_x],
+            y=[origin_pos_y],
+            mode='markers',
+            name='Packages'
+        )
+
+        return plot.Figure(data=[edge_scatter, node_scatter, origin_node], 
+                           layout=plot.Layout(title_text=f'Dependency graph for {package}',
+                               xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                               yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+        ))
 
 
 def _if_na_return_dict(x: Any) -> dict:
