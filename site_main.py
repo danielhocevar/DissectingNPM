@@ -14,7 +14,10 @@ st.markdown('''
             ''',
             unsafe_allow_html=True)
 
-GRAPH = graph.create_graph()
+if 'GRAPH' not in locals() or 'GRAPH' not in globals():
+    GRAPH = graph.create_graph()
+else:
+    print('Memoized the graph!')
 
 package_graph = GRAPH.get_package_digraph('firebase')
 
@@ -39,7 +42,9 @@ layout_functions = {'danman_layout': graph.danman_layout,
                     'spectral_layout':nx.spectral_layout, 
                     'spiral_layout':nx.spiral_layout,                     
                     }
+chosen_package = st.text_input('Choose Package:', 'aws-sdk')
+st.balloons()
 graph_layout_algo = st.selectbox('Select a graph layout:', list(layout_functions.keys()))
-plotly_graph = GRAPH.get_package_plotly('aws-sdk', layout_functions[graph_layout_algo])
+plotly_graph = GRAPH.get_package_plotly(chosen_package, layout_functions[graph_layout_algo])
 plotly_graph.update_layout(width = 1000, height=1000)
 st.plotly_chart(plotly_graph)

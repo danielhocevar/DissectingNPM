@@ -271,7 +271,10 @@ class PackageGraph:
         """
         if package in self._vertices:
             vertex = self._vertices[package]
-            return vertex.get_package_dependencies(set())        
+            edges = vertex.get_package_dependencies(set())
+            if len(edges) == 0:
+                edges = [(package, package)]
+            return edges
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
          
@@ -283,7 +286,10 @@ class PackageGraph:
         """
         if package in self._vertices:
             vertex = self._vertices[package]
-            return vertex.get_package_dependencies_depth(set(), 0)        
+            edges = vertex.get_package_dependencies_depth(set(), 0)
+            if len(edges) == 0:
+                edges = [(package, package, 1)]
+            return edges       
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
@@ -306,7 +312,8 @@ class PackageGraph:
         """
         if package in self._vertices:
             netxG = nx.Graph()
-            for edge in self.get_package_dependencies(package):
+            edges = self.get_package_dependencies(package)
+            for edge in edges:
                 netxG.add_edge(*edge)  # The * converts the tuple to two parameters
             return netxG
         else:
@@ -318,50 +325,50 @@ class PackageGraph:
         
         Inspired by https://plotly.com/python/network-graphs/.
         """
+        edges = self.get_package_dependencies_depth(package)
         if hasattr(nx, layout_algo.__name__):
             graph = self.get_package_graph_networkx(package)
             vertex_pos = layout_algo(graph)
 
-            edge_pos_x = []
-            edge_pos_y = []
-            for edge in graph.edges(): 
-                node_a_x, node_a_y = vertex_pos[edge[0]]
-                node_b_x, node_b_y = vertex_pos[edge[1]]
-                edge_pos_x.append(node_a_x)
-                edge_pos_x.append(node_b_x)
-                edge_pos_x.append(None)
-                edge_pos_y.append(node_a_y)
-                edge_pos_y.append(node_b_y)
-                edge_pos_y.append(None)       
+            # edge_pos_x = []
+            # edge_pos_y = []
+            # for edge in graph.edges(): 
+            #     node_a_x, node_a_y = vertex_pos[edge[0]]
+            #     node_b_x, node_b_y = vertex_pos[edge[1]]
+            #     edge_pos_x.append(node_a_x)
+            #     edge_pos_x.append(node_b_x)
+            #     edge_pos_x.append(None)
+            #     edge_pos_y.append(node_a_y)
+            #     edge_pos_y.append(node_b_y)
+            #     edge_pos_y.append(None)       
 
-            node_pos_x = []
-            node_pos_y = []
-            for node in graph.nodes():
-                node_pos = vertex_pos[node]
-                node_pos_x.append(node_pos[0])
-                node_pos_y.append(node_pos[1])
+            # node_pos_x = []
+            # node_pos_y = []
+            # for node in graph.nodes():
+            #     node_pos = vertex_pos[node]
+            #     node_pos_x.append(node_pos[0])
+            #     node_pos_y.append(node_pos[1])
         else:
-            edges = self.get_package_dependencies_depth(package)
             vertex_pos = danman_layout(edges)
 
-            edge_pos_x = []
-            edge_pos_y = []
-            for edge in edges: 
-                node_a_x, node_a_y = vertex_pos[edge[0]]
-                node_b_x, node_b_y = vertex_pos[edge[1]]
-                edge_pos_x.append(node_a_x)
-                edge_pos_x.append(node_b_x)
-                edge_pos_x.append(None)
-                edge_pos_y.append(node_a_y)
-                edge_pos_y.append(node_b_y)
-                edge_pos_y.append(None)       
+        edge_pos_x = []
+        edge_pos_y = []
+        for edge in edges: 
+            node_a_x, node_a_y = vertex_pos[edge[0]]
+            node_b_x, node_b_y = vertex_pos[edge[1]]
+            edge_pos_x.append(node_a_x)
+            edge_pos_x.append(node_b_x)
+            edge_pos_x.append(None)
+            edge_pos_y.append(node_a_y)
+            edge_pos_y.append(node_b_y)
+            edge_pos_y.append(None)       
 
-            node_pos_x = []
-            node_pos_y = []
-            for node in vertex_pos:
-                node_pos = vertex_pos[node]
-                node_pos_x.append(node_pos[0])
-                node_pos_y.append(node_pos[1])
+        node_pos_x = []
+        node_pos_y = []
+        for node in vertex_pos:
+            node_pos = vertex_pos[node]
+            node_pos_x.append(node_pos[0])
+            node_pos_y.append(node_pos[1])
             
 
         node_scatter = plot.Scatter(
@@ -376,10 +383,12 @@ class PackageGraph:
             textfont_size=9
         )
 
+        edge_text = ['a'] * len(edges)
         edge_scatter = plot.Scatter(
             x=edge_pos_x, y=edge_pos_y,
             mode='lines+text',
             name='Edges',
+            text=edge_text,
             line=dict(width=1, color="#a6caed")
         )
 
@@ -388,8 +397,8 @@ class PackageGraph:
             marker=dict(size=7),            
             x=[origin_pos_x],
             y=[origin_pos_y],
-            mode='markers+text',
-            name='Packages',
+            mode='markers',
+            name='Root Package',
             hoverinfo='text',
             textposition='top center',
             text=[package]
@@ -485,7 +494,6 @@ def _literal_eval_if_able(x: Any, otherwise: Any = '') -> Any:
         return ast.literal_eval(x)
 
 
-@st.cache
 def create_graph() -> PackageGraph:
     """Create a graph from our collected data."""
     # Apply data conversion to specific columns of our data
