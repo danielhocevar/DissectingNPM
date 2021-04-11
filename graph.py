@@ -14,6 +14,7 @@ import plotly.graph_objects as plot
 import scipy
 import pydot
 
+import streamlit as st
 
 class _PackageVertex:
     """A vertex representing one package.
@@ -122,6 +123,24 @@ class _PackageVertex:
                 relationships_so_far.append((self.name, vertex.name))
                 relationships_so_far.extend(vertex.get_package_dependencies(new_visited))
         return relationships_so_far
+    
+    
+    def get_package_dependencies_depth(self, visited: set, depth: int) -> list[list[str, str, int]]:
+        """
+        Return a list of tuples with one tupple for every edge that this node is connected to,
+        as well as a tupple for every upstream dependency edge.
+
+        The first string in the tupple is the dependent and the second string is the dependency
+
+        Apply the graph traversal pattern taught in class
+        """
+        new_visited = visited.union({self})
+        relationships_so_far = []
+        for vertex in self.upstream_dependencies:
+            if vertex not in visited:
+                relationships_so_far.append((self.name, vertex.name, depth + 1))
+                relationships_so_far.extend(vertex.get_package_dependencies_depth(new_visited, depth + 1))
+        return relationships_so_far
 
 
 class PackageGraph:
@@ -154,6 +173,11 @@ class PackageGraph:
         Assumes that row matches the format described by HEADER in assemble_data.py2.
         """
         self._vertices[row[0]] = _PackageVertex(row)
+
+    def has_vertex(self, item: str) -> None:
+        """Check if item is a vertex in this graph.
+        """
+        return item in self._vertices
 
     def construct_dependency_edges(self) -> None:
         """Form the appropriate dependency edges between all vertices in self._vertices.
@@ -250,6 +274,18 @@ class PackageGraph:
             return vertex.get_package_dependencies(set())        
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+         
+    def get_package_dependencies_depth(self, package: str) -> list[tuple[str, str, int]]:
+        """ 
+        Return a list containing tuples containing two package names
+
+        Each tuple in the list represents an edge between the two packages contained by the tuple
+        """
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            return vertex.get_package_dependencies_depth(set(), 0)        
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
     def get_package_digraph(self, package: str) -> gviz.Digraph:
         """
@@ -276,69 +312,161 @@ class PackageGraph:
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
-    def get_package_plotly(self, package: str, layout_algo: str):
+    def get_package_plotly(self, package: str, layout_algo: callable):
         """
         Return a plotly graph object used to visualize package dependencies.
         
         Inspired by https://plotly.com/python/network-graphs/.
         """
-        graph = self.get_package_graph_networkx(package)
+        if hasattr(nx, layout_algo.__name__):
+            graph = self.get_package_graph_networkx(package)
+            vertex_pos = layout_algo(graph)
 
-        vertex_pos = pydot.graphviz_layout(graph)
-        #vertex_pos = getattr(nx, layout_algo)(graph)
-        print('VERTEX POS')
-        print(vertex_pos)
-        edge_pos_x = []
-        edge_pos_y = []
-        for edge in graph.edges(): 
-            node_a_x, node_a_y = vertex_pos[edge[0]]
-            node_b_x, node_b_y = vertex_pos[edge[1]]
-            edge_pos_x.append(node_a_x)
-            edge_pos_x.append(node_b_x)
-            edge_pos_x.append(None)
-            edge_pos_y.append(node_a_y)
-            edge_pos_y.append(node_b_y)
-            edge_pos_y.append(None)       
+            edge_pos_x = []
+            edge_pos_y = []
+            for edge in graph.edges(): 
+                node_a_x, node_a_y = vertex_pos[edge[0]]
+                node_b_x, node_b_y = vertex_pos[edge[1]]
+                edge_pos_x.append(node_a_x)
+                edge_pos_x.append(node_b_x)
+                edge_pos_x.append(None)
+                edge_pos_y.append(node_a_y)
+                edge_pos_y.append(node_b_y)
+                edge_pos_y.append(None)       
 
+            node_pos_x = []
+            node_pos_y = []
+            for node in graph.nodes():
+                node_pos = vertex_pos[node]
+                node_pos_x.append(node_pos[0])
+                node_pos_y.append(node_pos[1])
+        else:
+            edges = self.get_package_dependencies_depth(package)
+            vertex_pos = danman_layout(edges)
 
-        node_pos_x = []
-        node_pos_y = []
-        for node in graph.nodes():
-            node_pos = vertex_pos[node]
-            node_pos_x.append(node_pos[0])
-            node_pos_y.append(node_pos[1])
+            edge_pos_x = []
+            edge_pos_y = []
+            for edge in edges: 
+                node_a_x, node_a_y = vertex_pos[edge[0]]
+                node_b_x, node_b_y = vertex_pos[edge[1]]
+                edge_pos_x.append(node_a_x)
+                edge_pos_x.append(node_b_x)
+                edge_pos_x.append(None)
+                edge_pos_y.append(node_a_y)
+                edge_pos_y.append(node_b_y)
+                edge_pos_y.append(None)       
+
+            node_pos_x = []
+            node_pos_y = []
+            for node in vertex_pos:
+                node_pos = vertex_pos[node]
+                node_pos_x.append(node_pos[0])
+                node_pos_y.append(node_pos[1])
             
+
         node_scatter = plot.Scatter(
-            marker=dict(size=12),            
+            marker=dict(size=7),            
             x=node_pos_x,
             y=node_pos_y,
             mode='markers+text',
             name='Packages',
             text=list(vertex_pos.keys()),
-            textposition='top center'
+            hoverinfo='text',
+            textposition='top center',
+            textfont_size=9
         )
 
         edge_scatter = plot.Scatter(
             x=edge_pos_x, y=edge_pos_y,
-            mode='lines',
+            mode='lines+text',
             name='Edges',
+            line=dict(width=1, color="#a6caed")
         )
 
         origin_pos_x, origin_pos_y = vertex_pos[package]
         origin_node = plot.Scatter(
-            marker=dict(size=12),            
+            marker=dict(size=7),            
             x=[origin_pos_x],
             y=[origin_pos_y],
-            mode='markers',
-            name='Packages'
+            mode='markers+text',
+            name='Packages',
+            hoverinfo='text',
+            textposition='top center',
+            text=[package]
         )
 
-        return plot.Figure(data=[edge_scatter, node_scatter, origin_node], 
+        visual = plot.Figure(data=[edge_scatter, node_scatter, origin_node], 
                            layout=plot.Layout(title_text=f'Dependency graph for {package}',
                                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
                                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
         ))
+        # visual.update_layout(
+        #     autosize = False
+        # )
+        
+        return visual
 
+
+def danman_layout(edges: list[tuple[str, str, int]]) -> dict[str, tuple[int, int]]:
+    """Return a custom graph layout for the vertices in edges.
+    """
+    # Separate the nodes into levels
+    levels: dict[int, list] = {}
+    deepest_level: dict[str, int] = {}
+    for edge in edges:
+        if edge[0] in deepest_level:
+            if edge[0] in deepest_level and edge[2] - 1 > deepest_level[edge[0]]:
+                # Remove from old position
+                levels[deepest_level[edge[0]]].remove(edge[0])
+                deepest_level[edge[0]] = edge[2] - 1
+                
+                # Add first node
+                if edge[2] - 1 in levels:
+                    if edge[0] not in levels[edge[2] - 1]:
+                        levels[edge[2] - 1].append(edge[0])
+                else:
+                    levels[edge[2] - 1] = [edge[0]]
+        else:
+            deepest_level[edge[0]] = edge[2] - 1
+            if edge[2] - 1 in levels:
+                if edge[0] not in levels[edge[2] - 1]:
+                    levels[edge[2] - 1].append(edge[0])
+            else:
+                levels[edge[2] - 1] = [edge[0]]
+
+        if edge[1] in deepest_level:    
+            if edge[2] > deepest_level[edge[1]]:
+                # Remove from old position
+                levels[deepest_level[edge[1]]].remove(edge[1])
+                deepest_level[edge[1]] = edge[2]
+
+                # Add second node
+                if edge[2] in levels:
+                    if edge[1] not in levels[edge[2]]:
+                        levels[edge[2]].append(edge[1])
+                else:
+                    levels[edge[2]] = [edge[1]]
+        else: 
+            deepest_level[edge[1]] = edge[2]
+            # Add second node
+            if edge[2] in levels:
+                if edge[1] not in levels[edge[2]]:
+                    levels[edge[2]].append(edge[1])
+            else:
+                levels[edge[2]] = [edge[1]]
+    
+    X_DELTA = 1000
+    # Position the nodes based on their levels
+    positions: dict[str, tuple[int, int]] = {}
+    for depth in levels:
+        layer_size = len(levels[depth])
+        current_loc = -layer_size // 2
+        for vertex in levels[depth]:
+            positions[vertex] = (current_loc * X_DELTA, -4 * depth + 0.3 * (current_loc % 3))
+            current_loc += 1
+    
+    return positions
+    
 
 def _if_na_return_dict(x: Any) -> dict:
     """If x isna, then return an empty dict. Else, return x."""
@@ -357,6 +485,7 @@ def _literal_eval_if_able(x: Any, otherwise: Any = '') -> Any:
         return ast.literal_eval(x)
 
 
+@st.cache
 def create_graph() -> PackageGraph:
     """Create a graph from our collected data."""
     # Apply data conversion to specific columns of our data
