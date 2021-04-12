@@ -376,19 +376,17 @@ class PackageGraph:
             x=node_pos_x,
             y=node_pos_y,
             mode='markers+text',
-            name='Packages',
+            name='Dependencies',
             text=list(vertex_pos.keys()),
             hoverinfo='text',
             textposition='top center',
             textfont_size=9
         )
 
-        edge_text = ['a'] * len(edges)
         edge_scatter = plot.Scatter(
             x=edge_pos_x, y=edge_pos_y,
-            mode='lines+text',
+            mode='lines',
             name='Edges',
-            text=edge_text,
             line=dict(width=1, color="#a6caed")
         )
 
@@ -398,14 +396,14 @@ class PackageGraph:
             x=[origin_pos_x],
             y=[origin_pos_y],
             mode='markers',
-            name='Root Package',
+            name='Searched Package',
             hoverinfo='text',
             textposition='top center',
             text=[package]
         )
 
         visual = plot.Figure(data=[edge_scatter, node_scatter, origin_node], 
-                           layout=plot.Layout(title_text=f'Dependency graph for {package}',
+                           layout=plot.Layout(title_text=f'Dependency Graph for {package}',
                                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
                                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
         ))

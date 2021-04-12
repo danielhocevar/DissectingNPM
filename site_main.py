@@ -33,14 +33,14 @@ fram = pd.DataFrame([dependencies], columns=names).transpose()
 st.bar_chart(fram)
 
 #st.graphviz_chart(package_graph)
-layout_functions = {'danman_layout': graph.danman_layout,
-                    'spring_layout':nx.spring_layout, 
-                    'circular_layout':nx.circular_layout, 
-                    'kamada_kawai_layout':nx.kamada_kawai_layout,
-                    'random_layout':nx.random_layout, 
-                    'shell_layout':nx.shell_layout, 
-                    'spectral_layout':nx.spectral_layout, 
-                    'spiral_layout':nx.spiral_layout,                     
+layout_functions = {'Danman Layout Algorithm (Custom)': graph.danman_layout,
+                    'Spring Layout':nx.spring_layout, 
+                    'Circular Layout':nx.circular_layout, 
+                    'Kamada Kawai Layout':nx.kamada_kawai_layout,
+                    'Random Layout':nx.random_layout, 
+                    'Shell Layout':nx.shell_layout, 
+                    'Spectral Layout':nx.spectral_layout, 
+                    'Spiral Layout':nx.spiral_layout,                     
                     }
 chosen_package = st.text_input('Choose Package:', 'aws-sdk')
 st.balloons()
