@@ -18,17 +18,17 @@ import streamlit as st
 
 class _PackageVertex:
     """A vertex representing one package.
-    
-    The properties upstream_dependencies and downstream_dependencies are used to 
+
+    The properties upstream_dependencies and downstream_dependencies are used to
     define edges in the graph.
-    
+
     Attributes:
         - name: The name of the package
         - version: The version of the package at the time the data was gathered
         - description: A short piece of text describing the purpose of the package.
         - keywords: A list of words describing the category of the package's purpose
         - dependencies: A list of strings representing upstream dependencies
-        - devDependencies: A list of other packages used to maintain the package (not 
+        - devDependencies: A list of other packages used to maintain the package (not
                            necessary to use the package)
         - comunityInterest: An indication popularity indicator
         - downloadsCount: The number of times the package has been downloaded
@@ -58,6 +58,8 @@ class _PackageVertex:
     upstream_dependencies: set[_PackageVertex]
     downstream_dependencies: set[_PackageVertex]
     keyword_relationships: dict[_PackageVertex]
+    maintainers: list[str]
+    maintainer_relationships: set[_PackageVertex]
 
     def __init__(self, package_data: list) -> None:
         """The constructor for our vertex."""
@@ -74,10 +76,11 @@ class _PackageVertex:
         self.quality = package_data[10]
         self.popularity = package_data[11]
         self.maintenance = package_data[12]
-    
+        self.maintainers = package_data[13]
         self.upstream_dependencies = set()
         self.downstream_dependencies = set()
         self.keyword_relationships = dict()
+        self.maintainer_relationships = set()
         
     def add_upstream_dependency(self, other: _PackageVertex) -> None:
         """Add other to this vertex's upstream dependencies"""
@@ -93,11 +96,28 @@ class _PackageVertex:
             self.keyword_relationships[keyword].add(other)
         else:
             self.keyword_relationships[keyword] = {other}
-    
+
+    # def add_maintainer_relationship(self, maintainer: str, other: _PackageVertex) -> None:
+    #     """Add other to this vertex's upstream dependencies"""
+    #     if maintainer in self.maintainer_relationships:
+    #         self.maintainer_relationships[maintainer].append(other)
+    #     else:
+    #         self.maintainer_relationships[maintainer] = [other]
+
+    def get_all_dependencies(self, visited: set) -> set:
+        """Return a set of all dependencies of this package 
+        (including dependencies of dependencies...)"""
+        visited.add(self)
+        total = {self.name}
+        for vertex in self.upstream_dependencies:
+            if vertex not in visited:
+                total.update(vertex.get_all_dependencies(visited))
+        return total
+
     def get_num_dependencies(self, visited: set) -> int:
         """
         Return all upstream dependencies, including dependencies of dependencies
-        
+
         Apply the graph traversal pattern taught in class
         """
         visited.add(self)
@@ -106,10 +126,10 @@ class _PackageVertex:
             if vertex not in visited:
                 total = total + 1 + vertex.get_num_dependencies(visited)
         return total
-    
-    def get_package_dependencies(self, visited: set) -> list[tuple[str, str]]:
+
+    def get_package_dependency_edges(self, visited: set) -> list[tuple[str, str]]:
         """
-        Return a list of tuples with one tupple for every edge that this node is connected to,
+        Return a list of tuples with one tuple for every edge that this node is connected to,
         as well as a tupple for every upstream dependency edge.
 
         The first string in the tupple is the dependent and the second string is the dependency
@@ -121,25 +141,47 @@ class _PackageVertex:
         for vertex in self.upstream_dependencies:
             if vertex not in visited:
                 relationships_so_far.append((self.name, vertex.name))
-                relationships_so_far.extend(vertex.get_package_dependencies(new_visited))
+                relationships_so_far.extend(vertex.get_package_dependency_edges(new_visited))
         return relationships_so_far
-    
-    
-    def get_package_dependencies_depth(self, visited: set, depth: int) -> list[list[str, str, int]]:
+
+    def get_package_dependency_depth_edges(self, visited: set, depth: int) -> list[tuple[str, str, int]]:
         """
-        Return a list of tuples with one tupple for every edge that this node is connected to,
-        as well as a tupple for every upstream dependency edge.
+        Return a list of tuples with one tuple for every edge that this node is connected to,
+        as well as a tuple for every upstream dependency edge.
 
-        The first string in the tupple is the dependent and the second string is the dependency
+        The first string in the tuple is the dependent and the second string is the dependency.
+        The third entry, int, is the depth.
 
-        Apply the graph traversal pattern taught in class
+        Apply the graph traversal pattern taught in class.
         """
         new_visited = visited.union({self})
         relationships_so_far = []
         for vertex in self.upstream_dependencies:
             if vertex not in visited:
                 relationships_so_far.append((self.name, vertex.name, depth + 1))
-                relationships_so_far.extend(vertex.get_package_dependencies_depth(new_visited, depth + 1))
+                relationships_so_far.extend(vertex.get_package_dependency_depth_edges(new_visited, depth + 1))
+        return relationships_so_far
+
+    def get_package_keywords_depth(self, visited: set, depth: int) -> list[tuple[str, str, int]]:
+        """
+        Return a list of tuples with one tuple for every edge that this node is connected to,
+        as well as a tuple for every upstream dependency edge.
+
+        The first string in the tuple is the dependent and the second string is the dependency.
+        The third entry, int, is the depth.
+        THe fourth entry, str, is the keyword associated with the edge.
+
+        Apply the graph traversal pattern taught in class.
+        """
+        print(f'Finding Keywords at depth {depth} for item {self.name}!')
+        visited.add(self)
+        relationships_so_far = []
+        for keyword in self.keyword_relationships:
+            for vertex in self.keyword_relationships[keyword]:
+                if vertex not in visited and depth < 10:
+                    relationships_so_far.append((self.name, vertex.name, depth + 1, keyword))
+                    relationships_so_far.extend(vertex.get_package_keywords_depth(visited,
+                                                                                  depth + 1))
         return relationships_so_far
 
 
@@ -147,37 +189,51 @@ class PackageGraph:
     """A graph representing the relationship between packages.
 
     Attributes:
-        - _vertices: A dictionary of all vertices in this graph. 
+        - _vertices: A dictionary of all vertices in this graph.
         Each key is a package name, and each value is a _PackageVertex object.
     """
     _vertices: dict[str, _PackageVertex]
-    
+
     def __init__(self, package_rows: list[list]) -> None:
         """Initialize the graph of packages with the package data.
         """
         self._vertices = {}
-    
+
         # Add packages as vertices
         for row in package_rows:
             self.add_vertex(row)
 
-        print('Constructing Dependency edges...')
         self.construct_dependency_edges()
-        print('Constructing Keyword edges...')
         self.construct_keyword_edges()
+        self.add_maintainer_edges()
+
+    def __len__(self) -> int:
+        """Return the number of vertices in this graph"""
+        return len(self._vertices)
+
+    def has_package(self, package: str) -> bool:
+        """
+        Return whether or not the package is contained in the graph
+        """
+        return package in self._vertices
+
+    def get_all_packages(self) -> list:
+        """Return a list of names of all the packages in this graph.
+        """
+        return list(self._vertices.keys())
 
     def add_vertex(self, row: list) -> None:
         """Add a _PackageVertex to this graph with the data contained in
         row. The vertex is reffered to by it's package name, at row[0].
-        
+
         Assumes that row matches the format described by HEADER in assemble_data.py2.
         """
         self._vertices[row[0]] = _PackageVertex(row)
 
-    def has_vertex(self, item: str) -> None:
-        """Check if item is a vertex in this graph.
-        """
-        return item in self._vertices
+    # def has_vertex(self, item: str) -> None:
+    #     """Check if item is a vertex in this graph.
+    #     """
+    #     return item in self._vertices
 
     def construct_dependency_edges(self) -> None:
         """Form the appropriate dependency edges between all vertices in self._vertices.
@@ -189,7 +245,7 @@ class PackageGraph:
 
     def add_dependency_edges(self, upstream_package: str, downstream_package: str) -> None:
         """Add an edge between the two vertices specified as parameters: one
-        recieves a downstream edge, the other recieves an upstream edge. 
+        recieves a downstream edge, the other recieves an upstream edge.
         """
         if upstream_package in self._vertices and downstream_package in self._vertices:
             downstream_vertex = self._vertices[downstream_package]
@@ -200,6 +256,30 @@ class PackageGraph:
         else:
             raise KeyError(f'The vertices {upstream_package} or {downstream_package}'\
                            'do not exist in this graph')
+
+    def add_maintainer_edges(self) -> None:
+        all_maintainers = {}
+        for vertex in self._vertices:
+            for maintainer in self._vertices[vertex].maintainers:
+                if maintainer in all_maintainers:
+                    all_maintainers[maintainer].add(vertex)
+                else: 
+                    all_maintainers[maintainer] = {vertex}
+        # print(all_maintainers)
+        # print('*****************************')
+        for maintainer in all_maintainers:
+            for package in all_maintainers[maintainer]:
+                if package in self._vertices:
+                    self._vertices[package].maintainer_relationships = self._vertices[package].maintainer_relationships.union(all_maintainers[maintainer])
+                    self._vertices[package].maintainer_relationships.remove(package)
+    
+        # for maintainer in all_maintainers:
+        #     for package in all_maintainers[maintainer]:
+        #         for other_package in all_maintainers[maintainer]:
+        #             if package != other_package and package in self._vertices and other_package in self._vertices:
+        #                 self._vertices[package].add_maintainer_relationship(maintainer, other_package)
+
+
 
     def construct_keyword_edges(self) -> None:
         """Form the approriate keyword edges between all vertices in self._vertices.
@@ -212,14 +292,12 @@ class PackageGraph:
                 else:
                     keywords[keyword].append(vertex)
 
-        i = 0
         for keyword in keywords:
-            i += 0
             keyword_list = keywords[keyword]
             for first in range(0, len(keyword_list) - 1):
                 for second in range(first + 1, len(keyword_list)):
                     self.add_keyword_edge(keyword_list[first], keyword_list[second], keyword)
-            
+
     def add_keyword_edge(self, package1: str, package2: str, keyword: str) -> None:
         """Add a keyword edge between the two vertices specified as parameters.
         """
@@ -232,7 +310,17 @@ class PackageGraph:
         else:
             raise KeyError(f'The vertices {package1} or {package2}'\
                            'do not exist in this graph')
-    
+
+    def get_all_dependencies(self, package: str) -> list:
+        """Return a list of all dependencies for the given package
+        (including dependencies of dependencies).
+        """
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            return list(vertex.get_all_dependencies(set()))
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+
     def get_num_dependencies(self, package: str) -> int:
         """
         Return the number of dependencies of the given package.
@@ -246,50 +334,59 @@ class PackageGraph:
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
-    def popular_package_data(self) -> tuple[list[str], list[int]]:
-        """Return dependency data on some hard-coded popular packages."""
-        popular_packages = [
-            'react',
-            'firebase',
-            'express',
-            'graphql',
-            'vue',
-            'async',
-            'jquery',
-            'bootstrap',
-        ]
-        num_dependencies = []
-        for package in popular_packages:
-            num_dependencies.append(self.get_num_dependencies(package))
-        return (popular_packages, num_dependencies)
-        
-    def get_package_dependencies(self, package: str) -> list[tuple[str, str]]:
-        """ 
+    def get_num_package_direct_dependencies(self, package: str) -> int:
+        """
+        Return the number of direct dependencies of the given pacakge.
+        """
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            return len(vertex.upstream_dependencies)
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+
+    def get_package_dependency_edges(self, package: str) -> list[tuple[str, str]]:
+        """
         Return a list containing tuples containing two package names
 
         Each tuple in the list represents an edge between the two packages contained by the tuple
         """
         if package in self._vertices:
             vertex = self._vertices[package]
-            edges = vertex.get_package_dependencies(set())
+            edges = vertex.get_package_dependency_edges(set())
             if len(edges) == 0:
                 edges = [(package, package)]
             return edges
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
-         
-    def get_package_dependencies_depth(self, package: str) -> list[tuple[str, str, int]]:
-        """ 
+
+    def get_package_dependency_depth_edges(self, package: str) -> list[tuple[str, str, int]]:
+        """
         Return a list containing tuples containing two package names
 
         Each tuple in the list represents an edge between the two packages contained by the tuple
         """
         if package in self._vertices:
             vertex = self._vertices[package]
-            edges = vertex.get_package_dependencies_depth(set(), 0)
+            edges = vertex.get_package_dependency_depth_edges(set(), 0)
             if len(edges) == 0:
                 edges = [(package, package, 1)]
-            return edges       
+            return edges
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+
+    def get_package_keyword_relationships(self, package: str) -> list[tuple[str, str, int]]:
+        """
+        Return a list containing tuples containing two package names
+
+        Each tuple in the list represents an edge between the two packages contained by the tuple
+        """
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            print('PackageGraph.get_package_keyword_relationships')
+            edges = vertex.get_package_keywords_depth(set(), 0)
+            if len(edges) == 0:
+                edges = [(package, package, 1, 'None')]
+            return edges
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
@@ -299,40 +396,55 @@ class PackageGraph:
         """
         if package in self._vertices:
             digraph = gviz.Digraph()
-            for edge in self.get_package_dependencies(package):
+            for edge in self.get_package_dependency_edges(package):
                 digraph.edge(edge[0], edge[1])
 
             return digraph
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
-    def get_package_graph_networkx(self, package: str) -> nx.Graph:
+    def get_package_dependencies_networkx(self, package: str,
+                                          edge_type='dependencies') -> nx.Graph:
         """
         Convert this graph to a networkx.
         """
         if package in self._vertices:
             netxG = nx.Graph()
-            edges = self.get_package_dependencies(package)
-            for edge in edges:
-                netxG.add_edge(*edge)  # The * converts the tuple to two parameters
+            if edge_type == 'dependencies':
+                edges = self.get_package_dependency_edges(package)
+                for edge in edges:
+                    netxG.add_edge(*edge)  # The * converts the tuple to two parameters
+            else:
+                raise NotImplementedError('Only graphs of dependencies can be generated!')
             return netxG
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
-    def get_package_plotly(self, package: str, layout_algo: callable):
+    def get_package_plotly(self, package: str,
+                                        layout_algo: callable,
+                                        edge_type='dependencies'):
         """
         Return a plotly graph object used to visualize package dependencies.
-        
+
         Inspired by https://plotly.com/python/network-graphs/.
         """
-        edges = self.get_package_dependencies_depth(package)
+        # Identify a list of edges
+        if edge_type == 'dependencies':
+            edges = self.get_package_dependency_depth_edges(package)
+        else:
+            print('Entering keyword search')
+            edges = self.get_package_keyword_relationships(package)
+            import pprint
+            pprint.pprint(edges)
+
+        # Generate positions for the vertices
         if hasattr(nx, layout_algo.__name__):
-            graph = self.get_package_graph_networkx(package)
+            graph = self.get_package_dependencies_networkx(package, edge_type)
             vertex_pos = layout_algo(graph)
 
             # edge_pos_x = []
             # edge_pos_y = []
-            # for edge in graph.edges(): 
+            # for edge in graph.edges():
             #     node_a_x, node_a_y = vertex_pos[edge[0]]
             #     node_b_x, node_b_y = vertex_pos[edge[1]]
             #     edge_pos_x.append(node_a_x)
@@ -340,7 +452,7 @@ class PackageGraph:
             #     edge_pos_x.append(None)
             #     edge_pos_y.append(node_a_y)
             #     edge_pos_y.append(node_b_y)
-            #     edge_pos_y.append(None)       
+            #     edge_pos_y.append(None)
 
             # node_pos_x = []
             # node_pos_y = []
@@ -353,7 +465,7 @@ class PackageGraph:
 
         edge_pos_x = []
         edge_pos_y = []
-        for edge in edges: 
+        for edge in edges:
             node_a_x, node_a_y = vertex_pos[edge[0]]
             node_b_x, node_b_y = vertex_pos[edge[1]]
             edge_pos_x.append(node_a_x)
@@ -361,7 +473,7 @@ class PackageGraph:
             edge_pos_x.append(None)
             edge_pos_y.append(node_a_y)
             edge_pos_y.append(node_b_y)
-            edge_pos_y.append(None)       
+            edge_pos_y.append(None)
 
         node_pos_x = []
         node_pos_y = []
@@ -369,10 +481,10 @@ class PackageGraph:
             node_pos = vertex_pos[node]
             node_pos_x.append(node_pos[0])
             node_pos_y.append(node_pos[1])
-            
+
 
         node_scatter = plot.Scatter(
-            marker=dict(size=7),            
+            marker=dict(size=7),
             x=node_pos_x,
             y=node_pos_y,
             mode='markers+text',
@@ -387,12 +499,13 @@ class PackageGraph:
             x=edge_pos_x, y=edge_pos_y,
             mode='lines',
             name='Edges',
-            line=dict(width=1, color="#a6caed")
+            line=dict(width=1, color="#a6caed"),
+            hoverinfo='skip'
         )
 
         origin_pos_x, origin_pos_y = vertex_pos[package]
         origin_node = plot.Scatter(
-            marker=dict(size=7),            
+            marker=dict(size=7),
             x=[origin_pos_x],
             y=[origin_pos_y],
             mode='markers',
@@ -402,7 +515,7 @@ class PackageGraph:
             text=[package]
         )
 
-        visual = plot.Figure(data=[edge_scatter, node_scatter, origin_node], 
+        visual = plot.Figure(data=[edge_scatter, node_scatter, origin_node],
                            layout=plot.Layout(title_text=f'Dependency Graph for {package}',
                                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
                                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
@@ -410,7 +523,7 @@ class PackageGraph:
         # visual.update_layout(
         #     autosize = False
         # )
-        
+
         return visual
 
 
@@ -426,7 +539,7 @@ def danman_layout(edges: list[tuple[str, str, int]]) -> dict[str, tuple[int, int
                 # Remove from old position
                 levels[deepest_level[edge[0]]].remove(edge[0])
                 deepest_level[edge[0]] = edge[2] - 1
-                
+
                 # Add first node
                 if edge[2] - 1 in levels:
                     if edge[0] not in levels[edge[2] - 1]:
@@ -441,7 +554,7 @@ def danman_layout(edges: list[tuple[str, str, int]]) -> dict[str, tuple[int, int
             else:
                 levels[edge[2] - 1] = [edge[0]]
 
-        if edge[1] in deepest_level:    
+        if edge[1] in deepest_level:
             if edge[2] > deepest_level[edge[1]]:
                 # Remove from old position
                 levels[deepest_level[edge[1]]].remove(edge[1])
@@ -453,7 +566,7 @@ def danman_layout(edges: list[tuple[str, str, int]]) -> dict[str, tuple[int, int
                         levels[edge[2]].append(edge[1])
                 else:
                     levels[edge[2]] = [edge[1]]
-        else: 
+        else:
             deepest_level[edge[1]] = edge[2]
             # Add second node
             if edge[2] in levels:
@@ -461,19 +574,20 @@ def danman_layout(edges: list[tuple[str, str, int]]) -> dict[str, tuple[int, int
                     levels[edge[2]].append(edge[1])
             else:
                 levels[edge[2]] = [edge[1]]
-    
+
     X_DELTA = 1000
     # Position the nodes based on their levels
     positions: dict[str, tuple[int, int]] = {}
     for depth in levels:
         layer_size = len(levels[depth])
-        current_loc = -layer_size // 2
+        current_loc = (-layer_size / 2) + ((0.5) * (depth % 2))
         for vertex in levels[depth]:
-            positions[vertex] = (current_loc * X_DELTA, -4 * depth + 0.3 * (current_loc % 3))
+            positions[vertex] = (current_loc * X_DELTA,
+                                 -4 * depth + 0.3 * (current_loc % 3))  # Diagonal y pattern
             current_loc += 1
-    
+
     return positions
-    
+
 
 def _if_na_return_dict(x: Any) -> dict:
     """If x isna, then return an empty dict. Else, return x."""
@@ -495,12 +609,14 @@ def _literal_eval_if_able(x: Any, otherwise: Any = '') -> Any:
 def create_graph() -> PackageGraph:
     """Create a graph from our collected data."""
     # Apply data conversion to specific columns of our data
-    converters = {4: _literal_eval_if_able, 
-                  5: lambda x: _literal_eval_if_able(x, {}), 
-                  6: lambda x: _literal_eval_if_able(x, {})
+    # Add 1 to your desired column
+    converters = {4: _literal_eval_if_able,
+                  5: lambda x: _literal_eval_if_able(x, {}),
+                  6: lambda x: _literal_eval_if_able(x, {}),
+                  14: lambda x: _literal_eval_if_able(x, []),
                   }
     # Read in the data
-    package_df = pd.read_csv('big.csv', converters=converters)
+    package_df = pd.read_csv('big_v2.csv', converters=converters)
     package_df = package_df.drop(package_df.columns[0], axis=1)  # Drop the first (index) column
 
     package_list = []
@@ -508,9 +624,25 @@ def create_graph() -> PackageGraph:
         package_list.append(list(data))
 
     graph = PackageGraph(package_list)
-    print(f'Processed {len(graph._vertices)} vertices')
+    print(f'Processed {len(graph)} vertices')
     return graph
 
+def popular_package_data(graph: PackageGraph) -> tuple[list[str], list[int]]:
+    """Return dependency data on some hard-coded popular packages."""
+    popular_packages = [
+        'react',
+        'firebase',
+        'express',
+        'graphql',
+        'vue',
+        'async',
+        'jquery',
+        'bootstrap',
+    ]
+    num_dependencies = []
+    for package in popular_packages:
+        num_dependencies.append(graph.get_num_dependencies(package))
+    return (popular_packages, num_dependencies)
 
 if __name__ == '__main__':
-    graph = create_graph()    
+    graph = create_graph()

@@ -22,7 +22,8 @@ HEADERS = [
     'dependentsCount',
     'quality',
     'popularity',
-    'maintenance'
+    'maintenance',
+    'maintainers'
 ]
 
 def get_package(package_name: str) -> Optional[dict]:
@@ -56,7 +57,7 @@ def _trim_package_data(data: dict) -> None:
     data['collected']['metadata'].pop('date')
     data['collected']['metadata'].pop('author')
     data['collected']['metadata'].pop('publisher')
-    data['collected']['metadata'].pop('maintainers')
+    #data['collected']['metadata'].pop('maintainers')
     data['collected']['metadata'].pop('repository')
     data['collected']['metadata'].pop('links')
     data['collected']['metadata'].pop('releases')
@@ -71,26 +72,45 @@ def _trim_package_data(data: dict) -> None:
 
     # Remove all source entries
     data['collected'].pop('source')
-    
+
+    # Only collect maintainer usernames
+    maintainers = data['collected']['maintainers']
+    try:
+        if maintainers is not None:
+         maintainers_usernames = [user['username'] for user in maintainers]
+        else:
+            maintainers_usernames = []
+    except:
+        maintainers_usernames = []
+    data['collected']['maintainers'] = maintainers_usernames
 
 def _convert_package_json_to_list(data: dict) -> list:
     """Add the given set of package data to the dataframe."""
-    
+
     body = [
         data.get('collected').get('metadata').get('name'), # str
         data.get('collected').get('metadata').get('version'), # str
         data.get('collected').get('metadata').get('description'), # str
         data.get('collected').get('metadata').get('keywords'), # lst[str]
         data.get('collected').get('metadata').get('dependencies'), # dict[str, str]
-        data.get('collected').get('metadata').get('devDependencies'), # dict[str, str] 
+        data.get('collected').get('metadata').get('devDependencies'), # dict[str, str]
         data.get('evaluation').get('popularity').get('communityInterest'), # float
         data.get('evaluation').get('popularity').get('downloadsCount'), # float
         data.get('evaluation').get('popularity').get('downloadsAcceleration'), # float
         data.get('evaluation').get('popularity').get('dependentsCount'), # float
         data.get('score').get('detail').get('quality'), # float
         data.get('score').get('detail').get('popularity'), # float
-        data.get('score').get('detail').get('maintenance') # float
+        data.get('score').get('detail').get('maintenance'), # float
+        data.get('collected').get('metadata').get('maintainers')
     ]
+
+    # Only collect user names for maintainers
+    maintainers = body[13]
+    if maintainers is not None:    
+        maintainers_usernames = [user['username'] for user in maintainers]
+    else: 
+        maintainers_usernames = []
+    body[13] = maintainers_usernames
 
     return body
 
@@ -154,6 +174,9 @@ def get_detailed_data() -> list[list]:
     #df = pd.DataFrame(columns=HEADERS)
     packages_so_far = []
     seen = set()
+
+
+
     with open('popular.txt', 'r') as file:
         data = file.readlines()
         i = 1 # A variable to keep help us keep track of progress
@@ -164,18 +187,30 @@ def get_detailed_data() -> list[list]:
             print(f'Length of list is now: {len(packages_so_far)}')
             i += 1
 
-            if i % 10 == 0:
-                df = pd.DataFrame(packages_so_far, columns=HEADERS)
-                print('Writing DataFrame')
-                df.to_csv(f'./intermediate/big{i}.csv')
+            # if i % 10 == 0:
+            #     df = pd.DataFrame(packages_so_far, columns=HEADERS)
+            #     print('Writing DataFrame')
+            #     df.to_csv(f'./intermediate/big{i}.csv')
             time.sleep(1)
-            
+
+    # Encode usernames as integers to protect identity
+    num_maintainers = 0
+    all_maintainers = {}
+    for a in range(len(packages_so_far)):
+        for b in range(len(packages_so_far[a][13])):
+            if packages_so_far[a][13][b] in all_maintainers:
+                packages_so_far[a][13][b] = all_maintainers[packages_so_far[a][13][b]]
+            else:
+                all_maintainers[packages_so_far[a][13][b]] = str(num_maintainers)
+                packages_so_far[a][13][b] = all_maintainers[packages_so_far[a][13][b]]
+                num_maintainers += 1
+
 
     df = pd.DataFrame(packages_so_far, columns=HEADERS)
 
     print('Writing Final DataFrame')
-    df.to_csv('./big.csv')
-        
+    df.to_csv('./big_v2.csv')
+
 
 def all_package_dependencies(package: str, seen: set) -> list[list]:
     """
@@ -196,11 +231,11 @@ def all_package_dependencies(package: str, seen: set) -> list[list]:
         seen.add(package)
         # Recursively get data for each of the package's upstream dependencies
         if data_list[4] is not None:
-            for dependency in data_list[4]:            
+            for dependency in data_list[4]:
                 if dependency not in seen:
                     c = all_package_dependencies(dependency, seen)
                     all_packages.extend(c)
-        
+
         return all_packages
 
 

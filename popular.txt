@@ -46,7 +46,6 @@ jsonwebtoken
 @babel/core
 rimraf
 ora
-styled-components
 style-loader
 shelljs
 react-redux
