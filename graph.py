@@ -383,7 +383,7 @@ class PackageGraph:
     
     def get_packages_with_common_maintainers(self, package: str) -> set:
         """
-        Return a set containing the names of the other packages that this package shares maintainers with
+        Return a set containing the names of the other packages that the parameter package shares maintainers with
         """
         if package in self._vertices:
             return self._vertices[package].maintainer_relationships
