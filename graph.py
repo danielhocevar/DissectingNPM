@@ -97,13 +97,6 @@ class _PackageVertex:
         else:
             self.keyword_relationships[keyword] = {other}
 
-    # def add_maintainer_relationship(self, maintainer: str, other: _PackageVertex) -> None:
-    #     """Add other to this vertex's upstream dependencies"""
-    #     if maintainer in self.maintainer_relationships:
-    #         self.maintainer_relationships[maintainer].append(other)
-    #     else:
-    #         self.maintainer_relationships[maintainer] = [other]
-
     def get_all_dependencies(self, visited: set) -> set:
         """Return a set of all dependencies of this package 
         (including dependencies of dependencies...)"""
@@ -162,7 +155,7 @@ class _PackageVertex:
                 relationships_so_far.extend(vertex.get_package_dependency_depth_edges(new_visited, depth + 1))
         return relationships_so_far
 
-    def get_package_keywords_depth(self, visited: set, depth: int) -> list[tuple[str, str, int]]:
+    def get_package_keywords_depth(self, visited: set, depth: int, max_depth: int = 1) -> list[tuple[str, str, int]]:
         """
         Return a list of tuples with one tuple for every edge that this node is connected to,
         as well as a tuple for every upstream dependency edge.
@@ -173,16 +166,25 @@ class _PackageVertex:
 
         Apply the graph traversal pattern taught in class.
         """
-        print(f'Finding Keywords at depth {depth} for item {self.name}!')
         visited.add(self)
         relationships_so_far = []
         for keyword in self.keyword_relationships:
             for vertex in self.keyword_relationships[keyword]:
-                if vertex not in visited and depth < 10:
+                if vertex not in visited and depth < max_depth: # Max_depth
                     relationships_so_far.append((self.name, vertex.name, depth + 1, keyword))
                     relationships_so_far.extend(vertex.get_package_keywords_depth(visited,
-                                                                                  depth + 1))
+                                                                                  depth + 1,
+                                                                                  max_depth))
         return relationships_so_far
+
+    def add_maintainer_relationships(self, other_packages) -> None:
+        """
+        Add other packages that share maintianers with this package to self.maintainer_relationships
+        """
+        self.maintainer_relationships = self.maintainer_relationships.union(other_packages)
+        # The line of code above also adds the current package naem to maintainer relationships. 
+        # We need to remove it.
+        self.maintainer_relationships.remove(self.name)
 
 
 class PackageGraph:
@@ -265,21 +267,10 @@ class PackageGraph:
                     all_maintainers[maintainer].add(vertex)
                 else: 
                     all_maintainers[maintainer] = {vertex}
-        # print(all_maintainers)
-        # print('*****************************')
         for maintainer in all_maintainers:
             for package in all_maintainers[maintainer]:
                 if package in self._vertices:
-                    self._vertices[package].maintainer_relationships = self._vertices[package].maintainer_relationships.union(all_maintainers[maintainer])
-                    self._vertices[package].maintainer_relationships.remove(package)
-    
-        # for maintainer in all_maintainers:
-        #     for package in all_maintainers[maintainer]:
-        #         for other_package in all_maintainers[maintainer]:
-        #             if package != other_package and package in self._vertices and other_package in self._vertices:
-        #                 self._vertices[package].add_maintainer_relationship(maintainer, other_package)
-
-
+                    self._vertices[package].add_maintainer_relationships(all_maintainers[maintainer])
 
     def construct_keyword_edges(self) -> None:
         """Form the approriate keyword edges between all vertices in self._vertices.
@@ -382,11 +373,20 @@ class PackageGraph:
         """
         if package in self._vertices:
             vertex = self._vertices[package]
-            print('PackageGraph.get_package_keyword_relationships')
+            # print('PackageGraph.get_package_keyword_relationships')
             edges = vertex.get_package_keywords_depth(set(), 0)
             if len(edges) == 0:
                 edges = [(package, package, 1, 'None')]
             return edges
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+    
+    def get_packages_with_common_maintainers(self, package: str) -> set:
+        """
+        Return a set containing the names of the other packages that this package shares maintainers with
+        """
+        if package in self._vertices:
+            return self._vertices[package].maintainer_relationships
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
@@ -403,26 +403,30 @@ class PackageGraph:
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
-    def get_package_dependencies_networkx(self, package: str,
-                                          edge_type='dependencies') -> nx.Graph:
+    def most_dependencies_data(self) -> tuple[list[str], list[int]]:
         """
-        Convert this graph to a networkx.
+        Return a tuple with one list containing the names of the packages with the most dependencies
+        and a second list containing the number of dependencies for each package respectively.
         """
-        if package in self._vertices:
-            netxG = nx.Graph()
-            if edge_type == 'dependencies':
-                edges = self.get_package_dependency_edges(package)
-                for edge in edges:
-                    netxG.add_edge(*edge)  # The * converts the tuple to two parameters
-            else:
-                raise NotImplementedError('Only graphs of dependencies can be generated!')
-            return netxG
-        else:
-            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+        package_dependencies = []
+        for package in self._vertices:
+            val = self.get_num_dependencies(package)
+            if type(val) != str:
+                package_dependencies.append([self.get_num_dependencies(package), package])
+        # for i in range(len(package_dependencies) - 1):
+        #     print(package_dependencies[i])
+        #     print(package_dependencies[i + 1])
+        #     x = package_dependencies[i] < package_dependencies[i + 1]
+        package_dependencies.sort()
+        most_dependecies_names = [package[1] for package in package_dependencies[len(package_dependencies) - 25:]]
+        most_dependecies_vals = [package[0] for package in package_dependencies[len(package_dependencies) - 25:]]
+        return (most_dependecies_names, most_dependecies_vals)
+        
+        
 
     def get_package_plotly(self, package: str,
-                                        layout_algo: callable,
-                                        edge_type='dependencies'):
+                                 layout_algo: callable,
+                                 edge_type='dependencies'):
         """
         Return a plotly graph object used to visualize package dependencies.
 
@@ -432,14 +436,12 @@ class PackageGraph:
         if edge_type == 'dependencies':
             edges = self.get_package_dependency_depth_edges(package)
         else:
-            print('Entering keyword search')
+            # print('Entering keyword search')
             edges = self.get_package_keyword_relationships(package)
-            import pprint
-            pprint.pprint(edges)
 
         # Generate positions for the vertices
         if hasattr(nx, layout_algo.__name__):
-            graph = self.get_package_dependencies_networkx(package, edge_type)
+            graph = convert_edges_to_networkx(edges)
             vertex_pos = layout_algo(graph)
 
             # edge_pos_x = []
@@ -610,7 +612,8 @@ def create_graph() -> PackageGraph:
     """Create a graph from our collected data."""
     # Apply data conversion to specific columns of our data
     # Add 1 to your desired column
-    converters = {4: _literal_eval_if_able,
+    converters = {1: lambda x: str(x),
+                  4: _literal_eval_if_able,
                   5: lambda x: _literal_eval_if_able(x, {}),
                   6: lambda x: _literal_eval_if_able(x, {}),
                   14: lambda x: _literal_eval_if_able(x, []),
@@ -621,11 +624,13 @@ def create_graph() -> PackageGraph:
 
     package_list = []
     for _, data in package_df.iterrows():
+        #if type(data[0]) == str:
         package_list.append(list(data))
 
     graph = PackageGraph(package_list)
     print(f'Processed {len(graph)} vertices')
     return graph
+
 
 def popular_package_data(graph: PackageGraph) -> tuple[list[str], list[int]]:
     """Return dependency data on some hard-coded popular packages."""
@@ -643,6 +648,18 @@ def popular_package_data(graph: PackageGraph) -> tuple[list[str], list[int]]:
     for package in popular_packages:
         num_dependencies.append(graph.get_num_dependencies(package))
     return (popular_packages, num_dependencies)
+
+
+def convert_edges_to_networkx(edges: list[tuple]) -> nx.Graph:
+    """
+    Convert this graph to a networkx.
+    """
+    netxG = nx.Graph()
+    # edges = self.get_package_dependency_edges(package)
+    for edge in edges:
+        netxG.add_edge(edge[0], edge[1])
+    return netxG
+
 
 if __name__ == '__main__':
     graph = create_graph()
