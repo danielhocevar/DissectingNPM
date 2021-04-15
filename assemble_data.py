@@ -52,13 +52,14 @@ def get_detailed_data(base_packages_file: str = 'popular.txt',
         - base_packages_file is a newline-separated list of valid npm packages
         - output_file must NOT have the prefix './'
     """
+    print('Generating Dataset...')
     packages_so_far = []
     seen = set()
 
     with open(base_packages_file, 'r') as file:
         data = file.readlines()
         i = 1 # A variable to keep help us keep track of progress
-        for line in data:
+        for line in data[:max_lines]:
             no_newline = line.replace('\n', '')
             print(f'Line ({i}) for package: {no_newline}')
             packages_so_far.extend(all_package_dependencies(line, seen))

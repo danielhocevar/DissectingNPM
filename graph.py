@@ -529,7 +529,6 @@ class PackageGraph:
 
         node_pos_x = []
         node_pos_y = []
-        node_order = []
         for node in vertex_pos:
             node_pos = vertex_pos[node]
             node_pos_x.append(node_pos[0])
@@ -702,7 +701,3 @@ def convert_edges_to_networkx(edges: list[tuple]) -> nx.Graph:
     for edge in edges:
         netxG.add_edge(edge[0], edge[1])
     return netxG
-
-
-if __name__ == '__main__':
-    graph = create_graph()

@@ -1,4 +1,0 @@
-z-page
-graphql
-react
-firebase
