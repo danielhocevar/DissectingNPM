@@ -1,25 +1,27 @@
 """
-Here we will define our Graph and _PackageVertex classes.
-These two classes will be very similar to the ones learned
-in class, and will makeup our Graph Data Structure.
+This module contains our graph class, PackageGraph, and the vertices that
+make it up, _PackageVertex.
+
+All heavy, graph-based computation takes place in this file.
+
+Copyright and Usage Information
+===============================
+This file is Copyright (c) 2021 Daniel Hocevar and Roman Zupancic. 
+
+This files contents may not be modified or redistributed without written
+permission from Daniel Hocevar and Roman Zupancic
 """
 from __future__ import annotations
-import csv
 import pandas as pd
-import ast
-from typing import Any, Callable
-import graphviz as gviz
 import networkx as nx
 import plotly.graph_objects as plot
-import scipy
-import pydot
+from typing import Any, Callable
 
-import streamlit as st
 
 class _PackageVertex:
     """A vertex representing one package.
 
-    The properties upstream_dependencies and downstream_dependencies are used to
+    The properties upstream_dependencies and downtream_dependencies are used to
     define edges in the graph.
 
     Attributes:
@@ -28,37 +30,41 @@ class _PackageVertex:
         - description: A short piece of text describing the purpose of the package.
         - keywords: A list of words describing the category of the package's purpose
         - dependencies: A list of strings representing upstream dependencies
-        - devDependencies: A list of other packages used to maintain the package (not
+        - dev_dependencies: A list of other packages used to maintain the package (not
                            necessary to use the package)
-        - comunityInterest: An indication popularity indicator
-        - downloadsCount: The number of times the package has been downloaded
-        - downloadsAcceleration: SOMETHING THAT I DON'T UNDERSTAND
-        - dependentsCount: The total number of packages in the entire database of
-                           npm packages that depend on this package
+        - community_interest: An indication popularity indicator
+        - downloads_count: The number of times the package has been downloaded
+        - downloads_acceleration: SOMETHING THAT I DON'T UNDERSTAND
+        - dependents_count: The total number of packages in the entire database of
+                            npm packages that depend on this package
         - quality: An indicator developed by npms.io
         - popularity: An indicator developed by npms.io
         - maintenance: An indicator developed by npms.io
+        - maintainers: A list of strings representing maintainers of this package
+
         - upstream_dependencies: A list of Vertices representing upstream dependencies
         - downstream_dependencies: A list of Vertices representing downstream dependencies
         - keyword_relationships: A list of Vertices that share keywords with self
+        - maintainer_relationships: A set of packages that share maintainers with this package
     """
     name: str
     version: str
     description: str
     keywords: list[str]
     dependencies: dict[str, str]
-    devDependencies: dict[str, str]
-    communityInterest: float
-    downloadsCount: int
-    downloadsAcceleration: float
-    dependentsCount: int
+    dev_dependencies: dict[str, str]
+    community_interest: float
+    downloads_count: int
+    downloads_acceleration: float
+    dependents_count: int
     quality: float
     popularity: float
     maintenance: float
+    maintainers: list[str]
+
     upstream_dependencies: set[_PackageVertex]
     downstream_dependencies: set[_PackageVertex]
     keyword_relationships: dict[_PackageVertex]
-    maintainers: list[str]
     maintainer_relationships: set[_PackageVertex]
 
     def __init__(self, package_data: list) -> None:
@@ -68,11 +74,11 @@ class _PackageVertex:
         self.description = package_data[2]
         self.keywords = package_data[3]
         self.dependencies = package_data[4]
-        self.devDependencies = package_data[5]
-        self.communityInterest = package_data[6]
-        self.downloadsCount = package_data[7]
-        self.downloadsAcceleration = package_data[8]
-        self.dependentsCount = package_data[9]
+        self.dev_dependencies = package_data[5]
+        self.community_interest = package_data[6]
+        self.downloads_count = package_data[7]
+        self.downloads_acceleration = package_data[8]
+        self.dependents_count = package_data[9]
         self.quality = package_data[10]
         self.popularity = package_data[11]
         self.maintenance = package_data[12]
@@ -176,15 +182,33 @@ class _PackageVertex:
                                                                                   depth + 1,
                                                                                   max_depth))
         return relationships_so_far
+    
+    def get_package_maintainers_local_net(self) -> list[tuple[str, str, int]]:
+        """
+        Return a list of tuples with one tuple for maintainer relationship that this package has,
+        as well as tuples for every maintainer relationship between every package that this package
+        shares maintainers with.
+
+        Note: this function is not recursive, since we only want to get edges that define a local maintainer
+        network.
+        """
+        relationships_so_far = set()
+        for vertex in self.maintainer_relationships:
+            relationships_so_far.add((self.name, vertex.name, 1))
+            secondary_edges = self.maintainer_relationships.intersection(vertex.maintainer_relationships)
+            for other_vertex in secondary_edges:
+                relationships_so_far.add((vertex.name, other_vertex.name, 2))
+            
+        return list(relationships_so_far)
 
     def add_maintainer_relationships(self, other_packages) -> None:
         """
         Add other packages that share maintianers with this package to self.maintainer_relationships
         """
-        self.maintainer_relationships = self.maintainer_relationships.union(other_packages)
-        # The line of code above also adds the current package naem to maintainer relationships. 
+        self.maintainer_relationships.update(other_packages)
+        # The line of code above also adds the current package to maintainer relationships. 
         # We need to remove it.
-        self.maintainer_relationships.remove(self.name)
+        self.maintainer_relationships.remove(self)
 
 
 class PackageGraph:
@@ -232,11 +256,6 @@ class PackageGraph:
         """
         self._vertices[row[0]] = _PackageVertex(row)
 
-    # def has_vertex(self, item: str) -> None:
-    #     """Check if item is a vertex in this graph.
-    #     """
-    #     return item in self._vertices
-
     def construct_dependency_edges(self) -> None:
         """Form the appropriate dependency edges between all vertices in self._vertices.
         """
@@ -264,13 +283,12 @@ class PackageGraph:
         for vertex in self._vertices:
             for maintainer in self._vertices[vertex].maintainers:
                 if maintainer in all_maintainers:
-                    all_maintainers[maintainer].add(vertex)
+                    all_maintainers[maintainer].add(self._vertices[vertex])
                 else: 
-                    all_maintainers[maintainer] = {vertex}
+                    all_maintainers[maintainer] = {self._vertices[vertex]}
         for maintainer in all_maintainers:
             for package in all_maintainers[maintainer]:
-                if package in self._vertices:
-                    self._vertices[package].add_maintainer_relationships(all_maintainers[maintainer])
+                package.add_maintainer_relationships(all_maintainers[maintainer])
 
     def construct_keyword_edges(self) -> None:
         """Form the approriate keyword edges between all vertices in self._vertices.
@@ -309,6 +327,15 @@ class PackageGraph:
         if package in self._vertices:
             vertex = self._vertices[package]
             return list(vertex.get_all_dependencies(set()))
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+
+    def get_direct_dependencies(self, package: str) -> list:
+        """Return a list of direct dependencies for the given package.
+        """
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            return list(v.name for v in vertex.upstream_dependencies)
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
@@ -373,7 +400,6 @@ class PackageGraph:
         """
         if package in self._vertices:
             vertex = self._vertices[package]
-            # print('PackageGraph.get_package_keyword_relationships')
             edges = vertex.get_package_keywords_depth(set(), 0)
             if len(edges) == 0:
                 edges = [(package, package, 1, 'None')]
@@ -381,25 +407,31 @@ class PackageGraph:
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
     
+    def get_package_maintainers_local_net(self, package: str) -> list[tuple[str, str, int]]:
+        """
+        Return a list containing tuples containing two package names
+
+        Each tuple in the list represents an edge representing that the two packages inside the
+        tuple share at least 1 maintainer.
+        """
+        if package in self._vertices:
+            vertex = self._vertices[package]
+            edges = vertex.get_package_maintainers_local_net(set(), 0)
+            if len(edges) == 0:
+                edges = [(package, package, 1, 'None')]
+            return edges
+        else:
+            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
+            
     def get_packages_with_common_maintainers(self, package: str) -> set:
         """
         Return a set containing the names of the other packages that the parameter package shares maintainers with
         """
         if package in self._vertices:
-            return self._vertices[package].maintainer_relationships
-        else:
-            raise KeyError(f'A vertex with the name {package} does not exist in this graph')
-
-    def get_package_digraph(self, package: str) -> gviz.Digraph:
-        """
-        Return a graphviz digraph object used to visualize package dependencies
-        """
-        if package in self._vertices:
-            digraph = gviz.Digraph()
-            for edge in self.get_package_dependency_edges(package):
-                digraph.edge(edge[0], edge[1])
-
-            return digraph
+            shared_maintainers = set()
+            for package in self._vertices[package].maintainer_relationships:
+                shared_maintainers.add(package.name)
+            return shared_maintainers
         else:
             raise KeyError(f'A vertex with the name {package} does not exist in this graph')
 
@@ -421,8 +453,24 @@ class PackageGraph:
         most_dependecies_names = [package[1] for package in package_dependencies[len(package_dependencies) - 25:]]
         most_dependecies_vals = [package[0] for package in package_dependencies[len(package_dependencies) - 25:]]
         return (most_dependecies_names, most_dependecies_vals)
-        
-        
+
+    def most_keywords_data(self) -> tuple[list[str], list[int]]:
+        """Return a tuple of two lists: the first list contains the top 25 most popular keywords 
+        in this graph, the second list contains the number of vertices each keyword applies to.
+        """
+        keyword_count = {}
+        for package in self._vertices:
+            vertex = self._vertices[package]
+            for keyword in vertex.keywords:
+                if keyword in keyword_count:
+                    keyword_count[keyword] += 1
+                else:
+                    keyword_count[keyword] = 1
+
+        sorted_tuples = sorted([(keyword_count[key], key) for key in keyword_count.keys()])
+        keys = [tup[1] for tup in sorted_tuples]
+        values = [tup[0] for tup in sorted_tuples]
+        return (keys, values)
 
     def get_package_plotly(self, package: str,
                                  layout_algo: callable,
@@ -435,6 +483,8 @@ class PackageGraph:
         # Identify a list of edges
         if edge_type == 'dependencies':
             edges = self.get_package_dependency_depth_edges(package)
+        elif edge_type == 'maintainers':
+            edges = self.get_package_maintainers_local_net(package)
         else:
             # print('Entering keyword search')
             edges = self.get_package_keyword_relationships(package)
@@ -479,6 +529,7 @@ class PackageGraph:
 
         node_pos_x = []
         node_pos_y = []
+        node_order = []
         for node in vertex_pos:
             node_pos = vertex_pos[node]
             node_pos_x.append(node_pos[0])
@@ -486,7 +537,7 @@ class PackageGraph:
 
 
         node_scatter = plot.Scatter(
-            marker=dict(size=7),
+            marker=dict(size=7, color=[]),
             x=node_pos_x,
             y=node_pos_y,
             mode='markers+text',
@@ -505,9 +556,26 @@ class PackageGraph:
             hoverinfo='skip'
         )
 
+        # The following method of coloring each vertex is inspired by the
+        # example code in the plotly documentation. 
+        # https://plotly.com/python/network-graphs/
+
+        vertex_colors = []
+        color_dict = {'low': '#e8353b', 'acceptable': '#e8ab02', 'good': '#29cc54'}
+        for node in vertex_pos:           
+            vertex = self._vertices[node]
+            if vertex.quality < 0.50:
+                vertex_colors.append(color_dict['low'])
+            elif vertex.quality < 0.80:
+                vertex_colors.append(color_dict['acceptable'])
+            else:
+                vertex_colors.append(color_dict['good'])
+
+        node_scatter.marker.color = vertex_colors
+
         origin_pos_x, origin_pos_y = vertex_pos[package]
         origin_node = plot.Scatter(
-            marker=dict(size=7),
+            marker=dict(size=7, color='#000000'),
             x=[origin_pos_x],
             y=[origin_pos_y],
             mode='markers',
@@ -517,14 +585,30 @@ class PackageGraph:
             text=[package]
         )
 
+        if edge_type == 'dependencies':
+            graph_name = 'Dependency' 
+        elif edge_type == 'keywords':
+            graph_name = 'Keyword'
+        elif edge_type == 'maintainers':
+            graph_name = 'Maintainer'
         visual = plot.Figure(data=[edge_scatter, node_scatter, origin_node],
-                           layout=plot.Layout(title_text=f'Dependency Graph for {package}',
-                               xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                               yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                             layout=plot.Layout(title_text=f'{graph_name} Graph for {package}',
+                             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                             yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
         ))
-        # visual.update_layout(
-        #     autosize = False
-        # )
+
+        if edge_type == 'keywords':
+            for edge in edges:
+                if edge[3] != 'None':
+                    x_pos = (vertex_pos[edge[0]][0] + vertex_pos[edge[1]][0]) / 2
+                    x_pos += (vertex_pos[edge[1]][0] - vertex_pos[edge[0]][0]) * 0.3
+                    y_pos = (vertex_pos[edge[0]][1] + vertex_pos[edge[1]][1]) / 2
+                    y_pos += (vertex_pos[edge[1]][1] - vertex_pos[edge[0]][1]) * 0.3
+                    visual.add_annotation(x=x_pos,
+                                        y=y_pos,
+                                        text=edge[3],
+                                        showarrow=True,
+                                        arrowhead=1)
 
         return visual
 
@@ -589,47 +673,6 @@ def danman_layout(edges: list[tuple[str, str, int]]) -> dict[str, tuple[int, int
             current_loc += 1
 
     return positions
-
-
-def _if_na_return_dict(x: Any) -> dict:
-    """If x isna, then return an empty dict. Else, return x."""
-    if pd.isna(x):
-        return {}
-    else:
-        return x
-
-
-def _literal_eval_if_able(x: Any, otherwise: Any = '') -> Any:
-    """Literally evaluate the entry as long as it is not empty."""
-    if x == '' or pd.isna(x):
-        return otherwise
-    else:
-        # TODO: Maybe replace this with a custom function instead of relying on module?
-        return ast.literal_eval(x)
-
-
-def create_graph() -> PackageGraph:
-    """Create a graph from our collected data."""
-    # Apply data conversion to specific columns of our data
-    # Add 1 to your desired column
-    converters = {1: lambda x: str(x),
-                  4: _literal_eval_if_able,
-                  5: lambda x: _literal_eval_if_able(x, {}),
-                  6: lambda x: _literal_eval_if_able(x, {}),
-                  14: lambda x: _literal_eval_if_able(x, []),
-                  }
-    # Read in the data
-    package_df = pd.read_csv('big_v2.csv', converters=converters)
-    package_df = package_df.drop(package_df.columns[0], axis=1)  # Drop the first (index) column
-
-    package_list = []
-    for _, data in package_df.iterrows():
-        #if type(data[0]) == str:
-        package_list.append(list(data))
-
-    graph = PackageGraph(package_list)
-    print(f'Processed {len(graph)} vertices')
-    return graph
 
 
 def popular_package_data(graph: PackageGraph) -> tuple[list[str], list[int]]:
