@@ -4,10 +4,10 @@ of the streamlit website.
 
 Copyright and Usage Information
 ===============================
-This file is Copyright (c) 2021 Daniel Hocevar and Roman Zupancic. 
+This file is Copyright (c) 2021 Daniel Hocevar and Roman Zupancic.
 
 This files contents may not be modified or redistributed without written
-permission from Daniel Hocevar and Roman Zupancic
+permission from Daniel Hocevar and Roman Zupancic.
 """
 # External Imports
 from typing import Any
@@ -44,7 +44,11 @@ def main() -> None:
 
 
 def create_graph() -> PackageGraph:
-    """Create a graph from our collected data."""
+    """Create a graph from our collected data.
+
+    Preconditions:
+        - There exists a file at this project's root called big_v2.csv
+    """
     # Apply data conversion to specific columns of our data
     # Add 1 to your desired column
     converters = {1: lambda x: str(x),
@@ -68,10 +72,10 @@ def create_graph() -> PackageGraph:
 
 
 def _if_na_return_dict(x: Any) -> dict:
-    """Return an empty dictionary if x is Nan (not a number). 
+    """Return an empty dictionary if x is Nan (not a number).
     Otherwise, return x.
-    
-    This function serves as a filter for pandas to apply as it converts a 
+
+    This function serves as a filter for pandas to apply as it converts a
     CSV file to a python-compatable dataframe.
     """
     if pd.isna(x):
@@ -83,7 +87,7 @@ def _if_na_return_dict(x: Any) -> dict:
 def _literal_eval_if_able(x: Any, otherwise: Any = '') -> Any:
     """Return parameter otherwise if x is an empty string or null.
     Otherwise, return the python evaluation of x.
-    
+
     This function serves as a filter for pandas to apply as it converts a
     CSV file to a python compatable dataframe: if x is some kind of python expression,
     the literal value of that expression will be saved to the dataframe, allowing us to
@@ -92,7 +96,6 @@ def _literal_eval_if_able(x: Any, otherwise: Any = '') -> Any:
     if x == '' or pd.isna(x):
         return otherwise
     else:
-        # TODO: Maybe replace this with a custom function instead of relying on module?
         return ast.literal_eval(x)
 
 
