@@ -21,8 +21,6 @@ from graph import PackageGraph
 # Constant values
 APP_COL_LENGTH = 4
 
-
-
 def setup() -> None:
     """Preform page initialization tweaks."""
 
@@ -145,21 +143,25 @@ def keyword_overview(package_graph: PackageGraph) -> None:
              - The Top 25 keywords account for {round(sum(number[-25:])/sum(number) * 100, 2)}% of all occurences of keywords in this graph.
              - {number.count(1)} ({round(number.count(1)/sum(number) * 100, 2)}% of) keywords only occur once throughout the entire graph.''')
 
-
-
-def maintainers_overview(package_graph: PackageGraph) -> None:
-    """This section includes explanations about keywords, and a short sample showcasing
-    keywords that appear in the highest number of packages.
-    """
-    st.header('Maintainers Overview')
-
-
 def package_search(package_graph: PackageGraph, 
                    layout_functions: dict[str, Callable]) -> None:
     """The package search (application) portion of the web page.
     """
     st.header('Package Search')
-
+    st.write('''This package search feature allows you to visualize the dependency hierarchy for a package as well
+                as keyword and maintainer networks. Use the package name dropdown to select a package from database,
+                and then use the edge relationship type and the graph type using the other two drop downs search 
+                fields.''')
+    st.write('''
+    The color of each node in the graph below indicates the quality of the package. The quality rating is a metric developed
+    by npms.io, and measures a variety of factors that may contribute to the package's condition on a scale of 0 to 1. 
+    If a vertex is colored red, the quality score for the package corresponding to the vertex is less than 0.5 
+    (a very low quality score). If a vertex is colored yellow, the quality score is greater than or equal to 0.5,
+    but less than 0.8. Finally, if a vertex is colored green, the quality score is between 0 and 1 inclusive.
+    We developed this color coding system and chose the intervals for each color ourselves. However, the quality
+    metric itself is developed and maintained by npms.io, and more info on this particular statistic can be 
+    found at https://npms.io/about (Note: this link will direct you to a third party website).
+    ''')
     # Prompt for package search
     all_packages = package_graph.get_all_packages()
     chosen_package = st.selectbox('Package Name:', all_packages, index=all_packages.index('express'), key='abc')
@@ -198,7 +200,7 @@ def package_search(package_graph: PackageGraph,
                                                 if dep not in chosen_direct_dependencies]
 
                 st.write(f'**This package has {len(chosen_all_dependencies)} total dependencies:**')
-
+                st.write("NOTE: Clicking any of the links below will direct you to www.npmjs.com (a third party site which may have it's own privacy policy and terms of service agreements, for which we are not responsible).")
                 st.write(f'There are {len(chosen_direct_dependencies)} direct dependencies:')
                 _list_package_columns(chosen_direct_dependencies, APP_COL_LENGTH)
 
@@ -214,6 +216,7 @@ def package_search(package_graph: PackageGraph,
         show_maintainers = st.checkbox('List packages with shared maintainers?')
         if show_maintainers:
             chosen_maintainer_share = list(package_graph.get_packages_with_common_maintainers(chosen_package))
+            st.write("NOTE: Clicking any of the links below will direct you to www.npmjs.com (a third party site which may have it's own privacy policy and terms of service agreements, for which we are not responsible).")
             st.write(f'''**This package shares at least one 
                     maintainer with {len(chosen_maintainer_share)} package(s).**''')
             _list_package_columns(chosen_maintainer_share, APP_COL_LENGTH)

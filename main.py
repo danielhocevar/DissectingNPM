@@ -45,8 +45,8 @@ if __name__ == '__main__':
     #
     # UNCOMMENT THIS LINE:
     # --------------------
-    assemble_data.get_detailed_data('popular.txt', 10, 'test_packages.csv')
+    # assemble_data.get_detailed_data('popular.txt', 10, 'test_packages.csv')
 
     # This line runs the main program.
     # If you'd like, you can comment this line while you run the data generation.
-    # main()
+    main()

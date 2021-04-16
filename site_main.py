@@ -40,7 +40,6 @@ def main() -> None:
     sf.introduction()
     sf.dependency_overview(package_graph)
     sf.keyword_overview(package_graph)
-    sf.maintainers_overview(package_graph)
     sf.package_search(package_graph, layout_functions)
 
 

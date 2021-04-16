@@ -416,7 +416,7 @@ class PackageGraph:
         """
         if package in self._vertices:
             vertex = self._vertices[package]
-            edges = vertex.get_package_maintainers_local_net(set(), 0)
+            edges = vertex.get_package_maintainers_local_net()
             if len(edges) == 0:
                 edges = [(package, package, 1, 'None')]
             return edges
